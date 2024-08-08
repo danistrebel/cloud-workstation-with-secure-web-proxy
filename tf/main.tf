@@ -8,6 +8,7 @@ module "project" {
     "networkservices.googleapis.com",
     "certificatemanager.googleapis.com",
     "workstations.googleapis.com",
+    "dns.googleapis.com",
   ]
 }
 
@@ -17,19 +18,19 @@ module "vpc" {
   name       = "demo-network"
   subnets = [
     {
-      ip_cidr_range = "10.0.0.0/22"
+      ip_cidr_range = var.cidr_workstations_subnet
       name          = "dev-workstations"
       region        = var.region
     },
     {
-      ip_cidr_range = "10.220.0.0/24"
+      ip_cidr_range = var.cidr_egress_proxy_subnet
       name          = "egress-proxy"
       region        = var.region
     },
   ]
   subnets_proxy_only = [
     {
-      ip_cidr_range = "10.198.0.0/23"
+      ip_cidr_range = var.cidr_regional_proxy_subnet
       name          = "regional-proxy"
       region        = var.region
       active        = true
@@ -81,7 +82,7 @@ module "secure-web-proxy" {
   name         = "secure-web-proxy"
   network      = module.vpc.id
   subnetwork   = module.vpc.subnets["${var.region}/egress-proxy"].id
-  addresses    = ["10.220.0.3"]
+  addresses    = [var.ip_secure_web_proxy]
   certificates = [google_certificate_manager_certificate.swp-self-signed.id]
   ports        = [80, 443]
   policy_rules = {
@@ -91,27 +92,58 @@ module "secure-web-proxy" {
         values   = ["www.google.com", "google.com"]
         priority = 1002
       }
+      apt-list = {
+        url_list = "apt"
+        values   = [
+            "security.ubuntu.com", 
+            "archive.ubuntu.com",
+        ]
+        priority = 1003
+      }
     }
   }
 }
 
-module "workstation-cluster" {
+module "swp-dns" {
+  source     = "github.com/terraform-google-modules/cloud-foundation-fabric//modules/dns?ref=v33.0.0"
+  project_id = module.project.id
+  name       = "swp-zone"
+  zone_config = {
+    domain = "example.internal."
+    private = {
+      client_networks = [module.vpc.self_link]
+    }
+  }
+  recordsets = {
+    "A swp"    = { ttl = 600, records = [var.ip_secure_web_proxy] }
+  }
+}
+
+module "workstation" {
   source     = "github.com/terraform-google-modules/cloud-foundation-fabric//modules/workstation-cluster?ref=v33.0.0"
   project_id = module.project.id
-  id         = "my-workstation-cluster"
+  id         = "workstation-cluster"
   location   = var.region
   network_config = {
     network    = module.vpc.id
     subnetwork = module.vpc.subnets["${var.region}/dev-workstations"].id
   }
   private_cluster_config = {
-    enable_private_endpoint = true
+    enable_private_endpoint = false
   }
   workstation_configs = {
     my-workstation-config = {
       gce_instance = {
         disable_public_ip_addresses = true
       }
+
+      container = {
+        env = {
+          HTTP_PROXY = "http://${var.ip_secure_web_proxy}:80"
+          HTTPS_PROXY = "https://${var.ip_secure_web_proxy}:443"
+        }
+      }
+
       workstations = {
         my-workstation = {
           labels = {
