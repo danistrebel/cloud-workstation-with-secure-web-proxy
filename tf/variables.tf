@@ -26,3 +26,13 @@ variable "ip_secure_web_proxy" {
   type = string
   default = "10.220.0.3"
 }
+
+variable "swp_domain" {
+  type = string
+  default = "example.internal"
+}
+
+variable "swp_subdomain" {
+  type = string
+  default = "proxy"
+}

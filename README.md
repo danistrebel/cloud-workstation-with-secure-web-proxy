@@ -16,3 +16,18 @@ It sets up the following resources:
 - Cloud Workstations with HTTP Proxy variables that point to the SWG
 
 ![Complete Architecture Diagram](./images/full_architecture.png)
+
+## Provisining
+
+```sh
+cd tf
+terraform init
+terraform apply --var project_id=$PROJECT_ID
+```
+
+## Clean Up
+
+```sh
+cd tf
+terraform destroy --var project_id=$PROJECT_ID
+```

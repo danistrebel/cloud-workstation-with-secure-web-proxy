@@ -46,7 +46,7 @@ resource "tls_private_key" "swp_private_key" {
 resource "tls_self_signed_cert" "swp_cert" {
   private_key_pem = tls_private_key.swp_private_key.private_key_pem
   subject {
-    common_name  = "swp.example.internal"
+    common_name  = "${var.swp_subdomain}.${var.swp_domain}"
     organization = "ACME Examples, Inc"
   }
   validity_period_hours = 24*365
@@ -109,20 +109,20 @@ module "swp-dns" {
   project_id = module.project.id
   name       = "swp-zone"
   zone_config = {
-    domain = "example.internal."
+    domain = "${var.swp_domain}."
     private = {
       client_networks = [module.vpc.self_link]
     }
   }
   recordsets = {
-    "A swp"    = { ttl = 600, records = [var.ip_secure_web_proxy] }
+    "A ${var.swp_subdomain}"    = { ttl = 600, records = [var.ip_secure_web_proxy] }
   }
 }
 
 module "workstation" {
   source     = "github.com/terraform-google-modules/cloud-foundation-fabric//modules/workstation-cluster?ref=v33.0.0"
   project_id = module.project.id
-  id         = "workstation-cluster"
+  id         = "my-workstation-cluster"
   location   = var.region
   network_config = {
     network    = module.vpc.id
@@ -134,13 +134,22 @@ module "workstation" {
   workstation_configs = {
     my-workstation-config = {
       gce_instance = {
+        machine_type                = "e2-standard-4"
         disable_public_ip_addresses = true
+        shielded_instance_config = {
+          enable_secure_boot          = true
+          enable_vtpm                 = true
+          enable_integrity_monitoring = true
+        }
       }
 
       container = {
+        image = "europe-west1-docker.pkg.dev/cloud-workstations-images/predefined/code-oss:latest"
         env = {
-          HTTP_PROXY = "http://${var.ip_secure_web_proxy}:80"
-          HTTPS_PROXY = "https://${var.ip_secure_web_proxy}:443"
+          HTTP_PROXY = "http://${var.swp_subdomain}.${var.swp_domain}:80"
+          http_proxy = "http://${var.swp_subdomain}.${var.swp_domain}:80"
+          HTTPS_PROXY = "https://${var.swp_subdomain}.${var.swp_domain}:443"
+          https_proxy = "https://${var.swp_subdomain}.${var.swp_domain}:443"
         }
       }
 
